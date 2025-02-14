@@ -1,4 +1,42 @@
-# Multi-Person Pose Forecasting with Individual Interaction Perceptron and Prior Learning (IAFormer)
+# IAFormer-exp
+
+I am experimenting with the original architecture.  
+
+## Model Dataflow
+
+![Model Dataflow](assets/IAFormer%20-%20Model%20Architecture.png)
+
+This architecture has two main modules:  
+- **Interaction Perception Module (IPM)**  
+- **Interaction Prior Learning Module (IPLM)**  
+
+### Interaction Perception Module (IPM)
+
+IPM generates two matrices:  
+- **Amplitude Matrix**  
+- **Interaction Trajectory**  
+
+These matrices are used to calculate the degree of influence in interaction for each person.  
+
+---
+
+## Experiment
+
+To calculate the Amplitude Matrix, the input spatial skeleton is first transformed into feature space using Discrete Cosine Transform (DCT) and a Multi-Pose Encoder.  
+
+The Multi-Pose Encoder utilizes self-attention in a TransformerEncoder, which has been modified to use **Temporal Hierarchical Attention** to better capture hierarchical features.  
+
+### Results
+
+**Training Comparison:**  
+![Training Comparison](assets/IAFormer-training-plot.png)  
+
+**APE Comparison:**  
+![APE Comparison](assets/ape-comparison.jpg)  
+
+
+---
+
 
 Accepted by European Conference on Computer Vision (ECCV2024)
 ## Overview
@@ -14,7 +52,7 @@ CHI3D from their [official website](https://ci3d.imar.ro/chi3d)
 Experiments base on Cuda 11.8 and Python 3.9 （Perhaps not limited to these versions）
 ```
 project_folder/
-├── data/
+├── Dataset/
 │   ├── Mocap
 │   │   ├── train_3_75_mocap_umpm.npy
 │   │   ├── test_3_75_mocap_umpm.npy
