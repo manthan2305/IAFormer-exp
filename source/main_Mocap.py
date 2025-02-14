@@ -7,7 +7,7 @@ sys.path.append('..')
 # print(sys.path)
 from tensorboardX import SummaryWriter
 from utils import other_utils as util
-from utils import View_skeleton as view3d
+# from utils import View_skeleton as view3d
 # from IPython import embed
 from tqdm import tqdm
 
@@ -57,7 +57,7 @@ def main(opt):
         # data_loader = DataLoader(dataset, batch_size=opt.batch_size, shuffle=False, num_workers=0, pin_memory=True)
 
     in_features = opt.in_features
-    nb_kpts = int(in_features/3)  # number of keypoints
+    nb_kpts = int(in_features/3)  # number of keypoints: 15
 
 
     print('>>> MODEL >>>')
@@ -78,7 +78,7 @@ def main(opt):
             model_path_len = './{}/ckpt_best.pth.tar'.format(opt.ckpt)
 
         print(">>> loading ckpt from '{}'".format(model_path_len))
-        ckpt = torch.load(model_path_len)
+        ckpt = torch.load(model_path_len, map_location='cuda:0')
         start_epoch = ckpt['epoch'] + 1
         lr_now = ckpt['lr']
 

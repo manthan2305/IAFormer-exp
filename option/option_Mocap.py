@@ -18,7 +18,7 @@ class Options:
         self.parser.add_argument('--ckpt', type=str, default='../model/checkpoint', help='path of checkpoint')
         self.parser.add_argument('--tensorboard', type=str, default='../model/tensorboard/', help='path to save tensorboard log')
         self.parser.add_argument('--model', type=str, default='IAFormer', help='model type used')
-        self.parser.add_argument('--cudaid', type=int, default=7, help='cuda index used')
+        self.parser.add_argument('--cudaid', type=int, default=0, help='cuda index used')
 
         "---codebook option---"
         self.parser.add_argument('--codebook_size', type=int, default=256, help='size of codebook(IKS)')
@@ -89,7 +89,7 @@ class Options:
 
                                                                                            )
         if log_name == 'exp_Mocap_IAFormer_in50_out25_lr_0.01_lrd_0.98_bs_96_ep_80_55_cb_256':
-            self.opt.mode = 'test'
+            self.opt.mode = 'train'
         self.opt.exp = log_name
 
         ckpt = os.path.join(self.opt.ckpt, self.opt.exp)

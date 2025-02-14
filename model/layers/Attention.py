@@ -7,7 +7,64 @@ Attention Block was redesigned with reference to
 https://github.com/hyunwoongko/transformer.git
 """
 
+class HierarchicalTemporalAttention(nn.Module):
+    def __init__(self, hidden_dim, num_heads, dropout, window_sizes=[3, 5, 7], num_levels=3):
+        super().__init__()
+        self.hidden_dim = hidden_dim
+        self.num_heads = num_heads
+        self.window_sizes = window_sizes  # Different window sizes for each level
+        self.num_levels = num_levels
 
+        # Local Temporal Attention modules for each level
+        self.local_attentions = nn.ModuleList([
+            MultiHeadAttention(num_heads, hidden_dim) 
+            for _ in range(num_levels)
+        ])
+        
+        # Global Temporal Attention
+        self.global_attention = MultiHeadAttention(num_heads, hidden_dim)
+        
+        # Feature fusion
+        self.linear_out = nn.Linear(hidden_dim * (num_levels + 1), hidden_dim)
+        self.dropout = nn.Dropout(dropout)
+
+    def forward(self, x, bias=None, mask=None):
+        B, T, D = x.size()
+        local_features = []
+
+        # Move input to GPU if available
+        device = x.device
+
+        # Process each hierarchical level
+        for level in range(self.num_levels):
+            window_size = self.window_sizes[level]
+            pad_size = (window_size - 1) // 2
+            
+            # Pad sequence temporally
+            padded_x = F.pad(x, (0, 0, pad_size, pad_size), 'constant', 0)
+            
+            # Extract local windows using unfold (parallelized)
+            unfolded_x = padded_x.unfold(1, window_size, 1)  # (B, T, D, window_size)
+            unfolded_x = unfolded_x.permute(0, 1, 3, 2)  # (B, T, window_size, D)
+            unfolded_x = unfolded_x.contiguous().view(B * T, window_size, D)  # (B * T, window_size, D)
+            
+            # Process windows through attention (parallelized)
+            level_out = self.local_attentions[level](unfolded_x, unfolded_x, unfolded_x)
+            level_out = level_out.view(B, T, window_size, D)  # (B, T, window_size, D)
+            level_out = torch.mean(level_out, dim=2)  # Average over window_size to get (B, T, D)
+            local_features.append(level_out)
+
+        # Global attention
+        global_out = self.global_attention(x, x, x)  # (B, T, D)
+        local_features.append(global_out)
+
+        # Concatenate and fuse features
+        combined = torch.cat(local_features, dim=-1)  # (B, T, D * (num_levels + 1))
+        out = self.linear_out(combined)
+        out = self.dropout(out)
+        
+        return out, None
+    
 class SelfAttention(nn.Module):
     def __init__(self, hidden_dim, num_heads, dropout):
         super().__init__()
@@ -57,33 +114,32 @@ class SelfAttention(nn.Module):
 
 
 class TransformerEncoder(nn.Module):
-    def __init__(self, hidden_dim, num_layers, num_heads, dropout):
+    def __init__(self, hidden_dim, num_layers, num_heads, dropout, window_sizes=[3,5,7]):
         super().__init__()
-        self.self_attentions = nn.ModuleList([SelfAttention(hidden_dim, num_heads, dropout) for _ in range(num_layers)])
-        self.linear1s = nn.ModuleList([nn.Linear(hidden_dim, 4 * hidden_dim) for _ in range(num_layers)])
-        self.linear2s = nn.ModuleList([nn.Linear(4 * hidden_dim, hidden_dim) for _ in range(num_layers)])
-        self.layer_norms1 = nn.ModuleList([nn.LayerNorm(hidden_dim) for _ in range(num_layers)])
-        self.layer_norms2 = nn.ModuleList([nn.LayerNorm(hidden_dim) for _ in range(num_layers)])
+        self.layers = nn.ModuleList([
+            nn.ModuleDict({
+                'temporal_attention': HierarchicalTemporalAttention(
+                    hidden_dim, num_heads, dropout, window_sizes),
+                'linear1': nn.Linear(hidden_dim, 4 * hidden_dim),
+                'linear2': nn.Linear(4 * hidden_dim, hidden_dim),
+                'norm1': nn.LayerNorm(hidden_dim),
+                'norm2': nn.LayerNorm(hidden_dim)
+            }) for _ in range(num_layers)
+        ])
         self.dropout = nn.Dropout(dropout)
 
     def forward(self, x, bias=None, mask=None):
-        attn_weights = []
-        for i, (self_attention, linear1, linear2, layer_norm1, layer_norm2) in enumerate(zip(self.self_attentions, self.linear1s, self.linear2s, self.layer_norms1, self.layer_norms2)):
-            # Self-Attention
-            attn_output, attn_weight = self_attention(x, bias, mask)
-            attn_weights.append(attn_weight)
-            # Add&Norm
-            x = layer_norm1(x + self.dropout(attn_output))
+        for layer in self.layers:
+            # Temporal attention
+            attn_out, _ = layer['temporal_attention'](x, bias, mask)
 
-            # Feedforward Network
-            ff_output = linear2(F.relu(linear1(x)))
-
-            # Add&Norm
-            x = layer_norm2(x + self.dropout(ff_output))
-
-        return x, torch.stack(attn_weights)
-
-
+            x = layer['norm1'](x + self.dropout(attn_out))
+            
+            # FFN
+            ffn_out = layer['linear2'](F.gelu(layer['linear1'](x)))
+            x = layer['norm2'](x + self.dropout(ffn_out))
+            
+        return x, None
 
 class MultiHeadAttention(nn.Module):
     def __init__(self, num_heads, d_model):
